@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+.env
+*.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Data
+backend/data/uploads/*
+!backend/data/uploads/.gitkeep
+backend/data/*.db
+backend/data/storage/
+backend/data/debug_*.txt
+backend/data/table_preview.txt
+
+# Local business files (contain real operational data)
+/2026年曼克斯日记账.xlsx
+/苏州曼克斯利润核算表2026年.xlsx
+
+# Local agent settings
+.claude/settings.local.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
