@@ -84,7 +84,6 @@ import {
   leaveEmployee,
   listDatasetRows,
   listDatasets,
-  listBusinessWarnings,
   listAttendance,
   listFinanceModule,
   importFinance,
@@ -120,7 +119,6 @@ import {
   getReconciliation,
   getOverdueReceivables,
   listPendingApprovals,
-  getAdvisorContext,
   askAdvisor,
   profitMonthly,
   clearByDateRange,
@@ -129,7 +127,6 @@ import type {
   ProfitMonthlyResult,
   AttendanceRecord,
   AuthUser,
-  BusinessWarning,
   CompanyRecord,
   ContractRecord,
   DashboardSummary,
@@ -596,9 +593,7 @@ export default function App() {
         <main className="flex min-h-0 min-w-0 flex-col">
           {activePage === "home" ? (
             <DashboardPage
-              datasets={datasets}
-              onImport={() => setImportOpen(true)}
-              onOpenData={() => goPage("data")}
+              onGoModule={(m) => { goModule(m); }}
             />
           ) : activePage === "advisor" ? (
             <AdvisorPage setError={setError} />
@@ -891,62 +886,26 @@ function SidebarMainButton({
 }
 
 function DashboardPage({
-  datasets,
-  onImport,
-  onOpenData,
+  onGoModule,
 }: {
-  datasets: DatasetIndexItem[];
-  onImport: () => void;
-  onOpenData: () => void;
+  onGoModule: (m: string) => void;
 }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [warnings, setWarnings] = useState<BusinessWarning[]>([]);
 
   useEffect(() => {
-    Promise.all([getDashboardSummary(), listBusinessWarnings()])
-      .then(([dashboard, warningResult]) => {
-        setSummary(dashboard);
-        setWarnings(warningResult.warnings);
-      })
-      .catch(() => {
-        setSummary(null);
-        setWarnings([]);
-      });
+    getDashboardSummary()
+      .then(setSummary)
+      .catch(() => setSummary(null));
   }, []);
 
-  const totalRows = datasets.reduce((total, item) => total + item.row_count, 0);
-  const journalRows = datasets
-    .filter((item) => item.category === "journal")
-    .reduce((total, item) => total + item.row_count, 0);
+  const warnings = summary?.warnings || [];
   const metrics = [
-    {
-      label: "在职人员",
-      value: summary?.active_employees ?? "—",
-      unit: "人",
-      icon: Users,
-      tone: "green",
-    },
-    {
-      label: "本月回款",
-      value: formatMoney(summary?.month_receivable),
-      unit: "",
-      icon: CircleDollarSign,
-      tone: "blue",
-    },
-    {
-      label: "本月工资支出",
-      value: formatMoney(summary?.month_salary),
-      unit: "",
-      icon: WalletCards,
-      tone: "amber",
-    },
-    {
-      label: "本月利润",
-      value: formatMoney(summary?.month_profit),
-      unit: "",
-      icon: ArrowUpRight,
-      tone: "ink",
-    },
+    { label: "在职人员", value: summary?.active_employees ?? "—", unit: "人", icon: Users },
+    { label: "合作企业", value: summary?.active_companies ?? "—", unit: "家", icon: Building2 },
+    { label: "本月收入", value: formatMoney(summary?.month_income), unit: "", icon: ArrowDownLeft },
+    { label: "本月支出", value: formatMoney(summary?.month_expense), unit: "", icon: ArrowUpRight },
+    { label: "本月利润", value: formatMoney(summary?.month_profit), unit: "", icon: CircleDollarSign },
+    { label: "日记账流水", value: summary?.journal_count ?? "—", unit: "笔", icon: WalletCards },
   ] as const;
 
   return (
@@ -955,53 +914,29 @@ function DashboardPage({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#678070]">
-              今日经营工作台
+              经营工作台 · {summary?.current_month || "—"}
             </div>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#17251d]">
-              该处理的事，都在这里
+              曼克斯劳务派遣
             </h1>
             <p className="mt-1 text-sm text-[#738078]">
-              先看风险和待办，再进入具体业务表格。
+              实时数据来自正式数据库，预警实时更新。
             </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onOpenData}>
-              <Database className="mr-2 h-4 w-4" />
-              查看全部数据
-            </Button>
-            <Button
-              onClick={onImport}
-              className="bg-[#173f2a] hover:bg-[#0f3320]"
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              导入 Excel
-            </Button>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           {metrics.map((metric) => {
             const Icon = metric.icon;
             return (
-              <div
-                key={metric.label}
-                className="rounded-xl border border-[#dfe6e1] bg-white p-4 shadow-[0_1px_2px_rgba(22,44,31,0.04)]"
-              >
+              <div key={metric.label} className="rounded-xl border border-[#dfe6e1] bg-white p-4 shadow-[0_1px_2px_rgba(22,44,31,0.04)]">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-[#69766f]">{metric.label}</span>
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#edf4ef] text-[#286040]">
-                    <Icon className="h-4 w-4" />
-                  </span>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#edf4ef] text-[#286040]"><Icon className="h-4 w-4" /></span>
                 </div>
                 <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-2xl font-semibold tabular-nums text-[#18251e]">
-                    {metric.value}
-                  </span>
-                  {metric.unit && (
-                    <span className="text-xs text-[#8a958f]">
-                      {metric.unit}
-                    </span>
-                  )}
+                  <span className="text-2xl font-semibold tabular-nums text-[#18251e]">{metric.value}</span>
+                  {metric.unit && <span className="text-xs text-[#8a958f]">{metric.unit}</span>}
                 </div>
               </div>
             );
@@ -1013,43 +948,26 @@ function DashboardPage({
             <div className="flex items-center justify-between border-b border-[#edf0ee] px-5 py-4">
               <div>
                 <h2 className="font-semibold text-[#223028]">风险预警</h2>
-                <p className="mt-0.5 text-xs text-[#849089]">
-                  合同、回款和数据一致性问题
-                </p>
+                <p className="mt-0.5 text-xs text-[#849089]">合同到期、入职未签、回款逾期</p>
               </div>
               <Badge variant="secondary">{warnings.length} 项</Badge>
             </div>
             <div className="divide-y divide-[#edf0ee]">
               {warnings.length > 0 ? (
-                warnings.slice(0, 6).map((warning, index) => (
-                  <div
-                    key={`${warning.type}-${warning.record_id ?? index}`}
-                    className="flex items-start gap-3 px-5 py-4"
-                  >
-                    <span
-                      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${warning.severity === "info" ? "bg-[#eef4ff] text-[#356bb4]" : "bg-[#fff3e8] text-[#b76320]"}`}
-                    >
+                warnings.slice(0, 8).map((w, i) => (
+                  <div key={`${w.type}-${i}`} className="flex items-start gap-3 px-5 py-4">
+                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${w.severity === "info" ? "bg-[#eef4ff] text-[#356bb4]" : "bg-[#fff3e8] text-[#b76320]"}`}>
                       <TriangleAlert className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-[#27342d]">
-                        {warning.title}
-                      </div>
-                      <div className="mt-1 text-xs text-[#7b8780]">
-                        {warning.message}
-                      </div>
+                      <div className="text-sm font-medium text-[#27342d]">{w.title}</div>
+                      <div className="mt-1 text-xs text-[#7b8780]">{w.message}</div>
                     </div>
-                    <span className="rounded-full bg-[#f3f5f4] px-2 py-1 text-[11px] text-[#758078]">
-                      {warning.type}
-                    </span>
+                    <span className="rounded-full bg-[#f3f5f4] px-2 py-1 text-[11px] text-[#758078]">{w.type}</span>
                   </div>
                 ))
               ) : (
-                <DashboardEmpty
-                  icon={Bell}
-                  title="当前没有规则预警"
-                  description="接入人员、合同和回款正式数据后，风险会集中显示在这里。"
-                />
+                <DashboardEmpty icon={Bell} title="当前没有预警" description="合同到期、入职未签、回款逾期等风险会显示在这里。" />
               )}
             </div>
           </section>
@@ -1057,83 +975,39 @@ function DashboardPage({
           <div className="grid gap-5">
             <section className="rounded-xl border border-[#dfe6e1] bg-[#173f2a] p-5 text-white shadow-[0_12px_30px_rgba(23,63,42,0.12)]">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-white/75">
-                  待处理事项
-                </div>
+                <div className="text-sm font-medium text-white/75">待审批</div>
                 <ClipboardCheck className="h-5 w-5 text-[#9ed0ad]" />
               </div>
-              <div className="mt-5 text-3xl font-semibold tabular-nums">
-                {summary?.approval_count ?? 0}
-              </div>
-              <div className="mt-1 text-sm text-white/70">条审批等待处理</div>
+              <div className="mt-5 text-3xl font-semibold tabular-nums">{summary?.approval_count ?? 0}</div>
+              <div className="mt-1 text-sm text-white/70">条工资/返费待审核确认</div>
               <div className="mt-5 border-t border-white/15 pt-4 text-xs leading-5 text-white/60">
-                三级审批接入后，这里将按角色展示待填写、待财务审核和待老板确认事项。
+                工资和返费需经财务审核、老板确认后生效。
               </div>
             </section>
 
             <section className="rounded-xl border border-[#dfe6e1] bg-white p-5">
               <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-[#223028]">数据概况</h2>
-                <Database className="h-4 w-4 text-[#708078]" />
+                <h2 className="font-semibold text-[#223028]">快捷入口</h2>
+                <ArrowUpRight className="h-4 w-4 text-[#708078]" />
               </div>
-              <div className="mt-4 grid grid-cols-3 divide-x divide-[#e9eeeb]">
-                <DashboardStat value={datasets.length} label="数据表" />
-                <DashboardStat value={totalRows} label="总记录" />
-                <DashboardStat value={journalRows} label="日记账" />
+              <div className="mt-4 space-y-2">
+                {[
+                  { key: "journal", label: "日记账", desc: "查看流水与收支" },
+                  { key: "employee", label: "人员档案", desc: "管理派遣员工" },
+                  { key: "company", label: "企业管理", desc: "合作企业信息" },
+                  { key: "approvals", label: "审批中心", desc: "待审核事项" },
+                ].map(item => (
+                  <button key={item.key} onClick={() => onGoModule(item.key)}
+                    className="w-full rounded-lg border border-[#e5eae7] bg-[#fafcfb] p-3 text-left hover:bg-[#edf4ef] transition">
+                    <div className="text-sm font-medium text-[#2a382f]">{item.label}</div>
+                    <div className="text-xs text-[#859088]">{item.desc}</div>
+                  </button>
+                ))}
               </div>
             </section>
           </div>
         </div>
-
-        <section className="mt-5 rounded-xl border border-[#dfe6e1] bg-white p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-[#223028]">最近数据表</h2>
-              <p className="mt-0.5 text-xs text-[#849089]">
-                快速回到刚刚维护的数据
-              </p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={onOpenData}>
-              进入业务板块 <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
-          </div>
-          {datasets.length > 0 ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {datasets.slice(0, 4).map((item) => (
-                <div
-                  key={item.dataset_id}
-                  className="rounded-lg border border-[#e5eae7] bg-[#fafcfb] p-3.5"
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium text-[#2a382f]">
-                    <FileSpreadsheet className="h-4 w-4 text-[#4d7b5e]" />
-                    <span className="truncate">{item.name}</span>
-                  </div>
-                  <div className="mt-2 text-xs text-[#859088]">
-                    {moduleLabel(item.category)} · {item.row_count} 条
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <DashboardEmpty
-              icon={FileSpreadsheet}
-              title="还没有导入数据"
-              description="先导入一份 Excel，系统会在这里保留最近使用入口。"
-            />
-          )}
-        </section>
       </div>
-    </div>
-  );
-}
-
-function DashboardStat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="px-3 text-center">
-      <div className="text-xl font-semibold tabular-nums text-[#233129]">
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-[#87928b]">{label}</div>
     </div>
   );
 }
@@ -1370,19 +1244,25 @@ type JournalDirectionFilter = "all" | "income" | "expense";
 
 function AttendancePage({ setError, reloadTrigger, onClear, onImport }: { setError: (v: string) => void; reloadTrigger: number; onClear: (m: string) => void; onImport: () => void }) {
   const [rows, setRows] = useState<AttendanceRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
-      const [a, e] = await Promise.all([listAttendance(), listEmployees()]);
+      const [a, e] = await Promise.all([listAttendance(targetPage, pageSize), listEmployees('', 1, 1000)]);
       setRows(a.rows);
+      setTotal(a.total);
+      setPage(targetPage);
       setEmployees(e.rows);
     } catch (x) {
       setError(readError(x));
     }
-  }, [setError]);
+  }, [pageSize, setError]);
   useEffect(() => {
-    load();
+    load(1);
   }, [load, reloadTrigger]);
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-white">
@@ -1403,7 +1283,7 @@ function AttendancePage({ setError, reloadTrigger, onClear, onImport }: { setErr
         </div>
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>
               {["日期","人员","状态","工时","扣款","备注",""].map(x => <th key={x} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{x}</th>)}
@@ -1428,6 +1308,7 @@ function AttendancePage({ setError, reloadTrigger, onClear, onImport }: { setErr
           </tbody>
         </table>
       </div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
     </div>
   );
 }
@@ -1778,26 +1659,32 @@ function FinanceDataPageV2({
   onClear: (m: string) => void;
 }) {
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
+  const [total, setTotal] = useState(0);
   const [editId, setEditId] = useState<number | null>(null);
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
   const meta = FINANCE_META[module];
-  const load = useCallback(async () => {
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
       const [r, c, e] = await Promise.all([
-        listFinanceModule(module),
-        listCompanies(),
-        listEmployees(),
+        listFinanceModule(module, targetPage, pageSize),
+        listCompanies('', '', 1, 1000),
+        listEmployees('', 1, 1000),
       ]);
       setRows(r.rows);
+      setTotal(r.total);
+      setPage(targetPage);
       setCompanies(c.rows);
       setEmployees(e.rows);
     } catch (x) {
       setError(readError(x));
     }
-  }, [module, setError]);
+  }, [module, pageSize, setError]);
   useEffect(() => {
-    load();
+    load(1);
   }, [load, reloadTrigger]);
   const doImport = () => {
     const input = document.createElement("input");
@@ -1852,7 +1739,7 @@ function FinanceDataPageV2({
         </div>
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>
               {meta.fields.map(([k, l]) => <th key={k} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{l}</th>)}
@@ -1880,6 +1767,7 @@ function FinanceDataPageV2({
           </tbody>
         </table>
       </div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
     </div>
   );
 }
@@ -2460,27 +2348,33 @@ function AttendanceEditor({
 void FinanceDataPage;
 function DatabaseContractPage({ setError, reloadTrigger, onClear, onImport }: { setError: (v: string) => void; reloadTrigger: number; onClear: (m: string) => void; onImport: () => void }) {
   const [rows, setRows] = useState<ContractRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [expiry, setExpiry] = useState<
     Array<{ contract_id: number; days_left: number }>
   >([]);
   const [editId, setEditId] = useState<number | null>(null);
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
       const [c, e, w] = await Promise.all([
-        listContracts(),
-        listEmployees(),
+        listContracts(undefined, targetPage, pageSize),
+        listEmployees('', 1, 1000),
         listContractExpiryWarnings(),
       ]);
       setRows(c.rows);
+      setTotal(c.total);
+      setPage(targetPage);
       setEmployees(e.rows);
       setExpiry(w.rows);
     } catch (x) {
       setError(readError(x));
     }
-  }, [setError]);
+  }, [pageSize, setError]);
   useEffect(() => {
-    load();
+    load(1);
   }, [load, reloadTrigger]);
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-white">
@@ -2508,7 +2402,7 @@ function DatabaseContractPage({ setError, reloadTrigger, onClear, onImport }: { 
         </div>
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>{["员工","合同编号","签订日期","起止日期","状态","预警",""].map(x => <th key={x} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{x}</th>)}</tr>
           </thead>
@@ -2526,6 +2420,7 @@ function DatabaseContractPage({ setError, reloadTrigger, onClear, onImport }: { 
           </tbody>
         </table>
       </div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
     </div>
   );
 }
@@ -2630,6 +2525,7 @@ function DatabaseEmployeePage({
   onClear: (m: string) => void;
 }) {
   const [rows, setRows] = useState<EmployeeRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [warnings, setWarnings] = useState<
     Array<{ employee_id: number; employee_name: string; days_worked: number }>
   >([]);
@@ -2638,24 +2534,29 @@ function DatabaseEmployeePage({
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [positions, setPositions] = useState<PositionRecord[]>([]);
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
-      const [e, w, c, p] = await Promise.all([
-        listEmployees(search),
+      const [e, w, c, pos] = await Promise.all([
+        listEmployees(search, targetPage, pageSize),
         listUnsignedContractWarnings(),
-        listCompanies(),
-        listPositions(),
+        listCompanies('', '', 1, 1000),
+        listPositions(undefined, 1, 1000),
       ]);
       setRows(e.rows);
+      setTotal(e.total);
+      setPage(targetPage);
       setWarnings(w.rows);
       setCompanies(c.rows);
-      setPositions(p.rows);
+      setPositions(pos.rows);
     } catch (x) {
       setError(readError(x));
     }
-  }, [search, setError]);
+  }, [search, pageSize, setError]);
   useEffect(() => {
-    load();
+    load(1);
   }, [load, reloadTrigger]);
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-white">
@@ -2685,7 +2586,7 @@ function DatabaseEmployeePage({
         </div>
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>
               {["姓名","身份证","手机号","企业/岗位","入职日期","合同","状态",""].map(x => <th key={x} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{x}</th>)}
@@ -2715,6 +2616,7 @@ function DatabaseEmployeePage({
           </tbody>
         </table>
       </div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
       {detail && (
         <EmployeeDetailDrawer detail={detail} onClose={() => setDetail(null)} />
       )}
@@ -2986,17 +2888,24 @@ function DatabaseCompanyPage({
   onClear: (m: string) => void;
 }) {
   const [rows, setRows] = useState<CompanyRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
-      setRows((await listCompanies(search)).rows);
+      const result = await listCompanies(search, '', targetPage, pageSize);
+      setRows(result.rows);
+      setTotal(result.total);
+      setPage(targetPage);
     } catch (e) {
       setError(readError(e));
     }
-  }, [search, setError]);
+  }, [search, pageSize, setError]);
   useEffect(() => {
-    load();
+    load(1);
   }, [load, reloadTrigger]);
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-white">
@@ -3007,7 +2916,7 @@ function DatabaseCompanyPage({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") load();
+              if (e.key === "Enter") load(1);
             }}
             placeholder="搜索企业、联系人或电话"
             className="flex-1 bg-transparent text-sm outline-none"
@@ -3035,7 +2944,7 @@ function DatabaseCompanyPage({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>
               {["企业名称","联系人","电话","合作状态","合作期限","回款期限",""].map(x => <th key={x} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{x}</th>)}
@@ -3060,7 +2969,7 @@ function DatabaseCompanyPage({
           </tbody>
         </table>
       </div>
-      <div className="border-t bg-[#fafcfb] px-4 py-2 text-xs text-[#7d8881]">共 {rows.length} 家企业</div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
     </div>
   );
 }
@@ -3204,15 +3113,21 @@ function DatabasePositionPage({
 }) {
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [rows, setRows] = useState<PositionRecord[]>([]);
+  const [total, setTotal] = useState(0);
   const [editId, setEditId] = useState<number | null>(null);
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
+  const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     try {
-      const [c, p] = await Promise.all([listCompanies(), listPositions()]);
+      const [c, pos] = await Promise.all([listCompanies('', '', 1, 1000), listPositions(undefined, targetPage, pageSize)]);
       setCompanies(c.rows);
-      setRows(p.rows);
+      setRows(pos.rows);
+      setTotal(pos.total);
+      setPage(targetPage);
     } catch (e) { setError(readError(e)); }
-  }, [setError]);
-  useEffect(() => { load(); }, [load, reloadTrigger]);
+  }, [pageSize, setError]);
+  useEffect(() => { load(1); }, [load, reloadTrigger]);
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-white">
       <div className="flex justify-between border-b bg-[#f8faf9] p-4">
@@ -3225,7 +3140,7 @@ function DatabasePositionPage({
         </div>
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>{["企业","岗位","日单价","需求人数","状态",""].map(x => <th key={x} className="px-2 py-2 text-left text-xs font-medium text-[#526058]">{x}</th>)}</tr>
           </thead>
@@ -3239,6 +3154,7 @@ function DatabasePositionPage({
           </tbody>
         </table>
       </div>
+      <PaginationBar total={total} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
     </div>
   );
 }
@@ -3382,6 +3298,7 @@ function DatabaseJournalPage({
   const [editId, setEditId] = useState<number | null>(null);
 
   const load = useCallback(async (p?: number) => {
+    const targetPage = p || page;
     setLoading(true);
     setError("");
     try {
@@ -3392,16 +3309,17 @@ function DatabaseJournalPage({
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
           search: keyword || undefined,
-          page: p || page,
+          page: targetPage,
           page_size: pageSize,
         }),
       );
+      setPage(targetPage);
     } catch (err) {
       setError(readError(err));
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, direction, ledger, keyword, page, pageSize, setError]);
+  }, [dateFrom, dateTo, direction, ledger, keyword, pageSize, setError]);
 
   useEffect(() => { load(1); setPage(1); }, [load, reloadTrigger]);
 
@@ -3411,8 +3329,6 @@ function DatabaseJournalPage({
     date_to: dateTo || undefined,
     search: keyword || undefined,
   });
-
-  const totalPages = Math.max(1, Math.ceil((result?.total || 0) / pageSize));
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[#dfe6e1] bg-white">
@@ -3499,7 +3415,7 @@ function DatabaseJournalPage({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="min-w-full border-collapse text-sm">
+        <table className="min-w-full table-fixed border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
             <tr>
               {["日期","账簿","收支","金额","方式","摘要","来源",""].map((label) => (
@@ -3508,7 +3424,6 @@ function DatabaseJournalPage({
             </tr>
           </thead>
           <tbody>
-            {/* +新增 按钮行 */}
             <tr className="border-b border-[#e2e7e4] bg-[#fafcfb]">
               <td colSpan={8} className="px-2 py-1">
                 {editId === -1 ? (
@@ -3531,17 +3446,7 @@ function DatabaseJournalPage({
       </div>
       <div className="shrink-0 border-t border-[#e7ece9] bg-[#fafcfb] px-4 py-2.5 flex items-center justify-between text-xs text-[#7d8881]">
         <span>共 {result?.total || 0} 条 · 点击行编辑 | Tab 跳格 | Enter 保存</span>
-        <div className="flex items-center gap-2">
-          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-            className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs">
-            {[30,50,100].map(n => <option key={n} value={n}>{n}条/页</option>)}
-          </select>
-          <button onClick={() => load(page - 1)} disabled={page <= 1}
-            className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs disabled:opacity-40">上一页</button>
-          <span className="tabular-nums">{page}/{totalPages}</span>
-          <button onClick={() => load(page + 1)} disabled={page >= totalPages}
-            className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs disabled:opacity-40">下一页</button>
-        </div>
+        <PaginationBar total={result?.total || 0} page={page} pageSize={pageSize} onPageChange={(p) => load(p)} onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }} />
       </div>
     </div>
   );
@@ -3625,7 +3530,6 @@ function JournalRow({ row, onSaved, isEditing, onEdit }: { row: JournalTransacti
           <option value="income">收入</option><option value="expense">支出</option>
         </select>
       </td>
-      <td className={cell}><input value={f.category} onChange={(e) => setF({...f, category: e.target.value})} className={inputCls} /></td>
       <td className={cell}><input type="number" step="0.01" value={f.amount} onChange={(e) => setF({...f, amount: e.target.value})} className={inputCls} /></td>
       <td className={cell}><input value={f.payment_method} onChange={(e) => setF({...f, payment_method: e.target.value})} className={inputCls} /></td>
       <td className={cell}><input value={f.summary} onChange={(e) => setF({...f, summary: e.target.value})} className={inputCls} onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") onSaved(); }} /></td>
@@ -3642,7 +3546,7 @@ function JournalNewRowInline({ onSaved, onCancel }: { onSaved: () => void; onCan
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({
     transaction_date: today, ledger_type: "cash" as "cash"|"bank",
-    direction: "expense" as "income"|"expense", category: "other",
+    direction: "expense" as "income"|"expense",
     amount: "", payment_method: "", summary: "",
   });
   const [saving, setSaving] = useState(false);
@@ -3654,7 +3558,7 @@ function JournalNewRowInline({ onSaved, onCancel }: { onSaved: () => void; onCan
     try {
       await createJournalTransaction({
         transaction_date: f.transaction_date, ledger_type: f.ledger_type,
-        direction: f.direction, category: f.category, amount: amt,
+        direction: f.direction, category: "other", amount: amt,
         payment_method: f.payment_method || null, summary: f.summary || null,
       } as Omit<JournalTransaction, "id" | "status" | "source_import_row_id">);
       onSaved();
@@ -3674,7 +3578,6 @@ function JournalNewRowInline({ onSaved, onCancel }: { onSaved: () => void; onCan
       <td className={cell}>
         <select value={f.direction} onChange={(e) => setF({...f, direction: e.target.value as "income"|"expense"})} className={inputCls}>
           <option value="income">收入</option><option value="expense">支出</option></select></td>
-      <td className={cell}><input value={f.category} onChange={(e) => setF({...f, category: e.target.value})} className={inputCls} placeholder="类别" /></td>
       <td className={cell}><input type="number" step="0.01" value={f.amount} onChange={(e) => setF({...f, amount: e.target.value})} className={inputCls} placeholder="金额" onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></td>
       <td className={cell}><input value={f.payment_method} onChange={(e) => setF({...f, payment_method: e.target.value})} className={inputCls} placeholder="方式" /></td>
       <td className={cell}><input value={f.summary} onChange={(e) => setF({...f, summary: e.target.value})} className={inputCls} placeholder="摘要" onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></td>
@@ -3831,7 +3734,7 @@ function ApprovalsPage({ setError, reloadTrigger }: { setError: (v: string) => v
         {!items.length ? (
           <EmptyState title="暂无待审批" description="所有工资和返费已确认完毕" />
         ) : (
-          <table className="min-w-full text-sm">
+          <table className="min-w-full table-fixed text-sm">
             <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
               <tr>{["事项","日期","金额","当前状态","操作"].map(x => <th key={x} className="px-3 py-2.5 text-left text-xs font-medium text-[#526058]">{x}</th>)}</tr>
             </thead>
@@ -3861,7 +3764,6 @@ function ApprovalsPage({ setError, reloadTrigger }: { setError: (v: string) => v
 }
 
 function AdvisorPage({ setError }: { setError: (v: string) => void }) {
-  const [ctx, setCtx] = useState<Record<string, any> | null>(null);
   const [messages, setMessages] = useState<Array<{role: string; content: string}>>(() => {
     try { const s = localStorage.getItem("advisor_msgs"); return s ? JSON.parse(s) : []; } catch { return []; }
   });
@@ -3871,10 +3773,6 @@ function AdvisorPage({ setError }: { setError: (v: string) => void }) {
   useEffect(() => {
     localStorage.setItem("advisor_msgs", JSON.stringify(messages.slice(-20)));
   }, [messages]);
-
-  useEffect(() => {
-    (async () => { try { setCtx(await getAdvisorContext()); } catch (e) { setError(readError(e)); } })();
-  }, [setError]);
 
   const send = async (question?: string) => {
     const q = question || input;
@@ -3899,7 +3797,7 @@ function AdvisorPage({ setError }: { setError: (v: string) => void }) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#173f2a] text-white"><Bot className="h-5 w-5" /></div>
           <div>
             <b className="text-lg">AI 顾问</b>
-            <div className="text-xs text-[#7d8881]">{ctx ? "已连接全部数据 · 可直接提问或查看下方摘要" : "正在连接数据..."}</div>
+            <div className="text-xs text-[#7d8881]">已连接全部业务数据 · 可直接提问</div>
           </div>
           {messages.length > 0 && (
             <Button variant="ghost" size="sm" onClick={() => { setMessages([]); localStorage.removeItem("advisor_msgs"); }}>
@@ -3910,28 +3808,9 @@ function AdvisorPage({ setError }: { setError: (v: string) => void }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {/* Data summary cards - instant, no AI needed */}
-        {ctx && (
-          <div className="px-6 py-4 space-y-3">
-            <div className="text-xs font-semibold text-[#7d8881] uppercase tracking-wider">实时数据摘要 · {ctx.date}</div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <SummaryCard label="在职人员" value={String(ctx.employees?.active ?? 0)} unit="人" source="employees表" />
-              <SummaryCard label="正常合作企业" value={String(ctx.companies?.active ?? 0)} unit="家" source="companies表" />
-              <SummaryCard label="本月收入" value={String(Math.round(ctx.month_cash?.income ?? 0))} unit="元" source="cash_transactions" />
-              <SummaryCard label="本月支出" value={String(Math.round(ctx.month_cash?.expense ?? 0))} unit="元" source="cash_transactions" />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <SummaryCard label="逾期回款" value={String(ctx.overdue?.count ?? 0)} unit="笔" tone="warn" source="receivables表" />
-              <SummaryCard label="待审批" value={String(ctx.pending_approvals ?? 0)} unit="项" tone="warn" source="payroll_batches" />
-              <SummaryCard label="核对差异" value={String(ctx.reconciliation_issues ?? 0)} unit="处" tone={(ctx.reconciliation_issues ?? 0) > 0 ? "warn" : "ok"} source="比对结果" />
-              <SummaryCard label="合同到期预警" value={String(ctx.warnings?.contract_expiry ?? 0)} unit="份" tone={(ctx.warnings?.contract_expiry ?? 0) > 0 ? "warn" : "ok"} source="contracts表" />
-            </div>
-          </div>
-        )}
-
         {/* Chat messages */}
         {messages.length > 0 && (
-          <div className="px-6 py-4 space-y-4 border-t">
+          <div className="px-6 py-4 space-y-4">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-6 ${
@@ -3972,18 +3851,6 @@ function AdvisorPage({ setError }: { setError: (v: string) => void }) {
   );
 }
 
-function SummaryCard({ label, value, unit, tone, source }: { label: string; value: string; unit: string; tone?: string; source?: string }) {
-  const borderColor = tone === "warn" ? "border-[#ffd2ca]" : tone === "ok" ? "border-[#cce8d4]" : "border-[#dfe6e1]";
-  const bgColor = tone === "warn" ? "bg-[#fff8f6]" : "bg-white";
-  return (
-    <div className={`rounded-lg border ${borderColor} ${bgColor} p-3`}>
-      <div className="text-xs text-[#7d8881]">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums text-[#1f2b31]">{value}<span className="text-xs font-normal text-[#86909c] ml-0.5">{unit}</span></div>
-      {source && <div className="mt-0.5 text-[10px] text-[#b0b8b2]">{source}</div>}
-    </div>
-  );
-}
-
 function OverduePage({ setError, reloadTrigger }: { setError: (v: string) => void; reloadTrigger: number }) {
   const [result, setResult] = useState<Awaited<ReturnType<typeof getOverdueReceivables>> | null>(null);
   const load = useCallback(async () => {
@@ -4003,7 +3870,7 @@ function OverduePage({ setError, reloadTrigger }: { setError: (v: string) => voi
         {!items.length ? (
           <EmptyState title="暂无逾期" description="所有回款均在期限内" />
         ) : (
-          <table className="min-w-full text-sm">
+          <table className="min-w-full table-fixed text-sm">
             <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
               <tr>{["企业","预计回款日","逾期天数","应收","已收","待回款","状态","备注"].map(x => <th key={x} className="px-2 py-2.5 text-left text-xs font-medium text-[#526058]">{x}</th>)}</tr>
             </thead>
@@ -4071,7 +3938,7 @@ function ReconciliationPage({ setError, reloadTrigger }: { setError: (v: string)
         ) : result.ok ? (
           <EmptyState title="核对通过 ✓" description="所选范围内日记账与业务记录完全一致，没有差异" />
         ) : (
-          <table className="min-w-full border-collapse text-sm">
+          <table className="min-w-full table-fixed border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
               <tr>
                 {["类型","关联记录","日期","业务金额","日记账金额","差异","问题"].map(x => (
@@ -4198,7 +4065,7 @@ function DatabaseProfitPage({
       <div className="min-h-0 flex-1 overflow-auto">
         {!rows.length
           ? <EmptyState title="暂无利润数据" description="所选月份范围内没有已确认的收入和成本数据，请点击查询" />
-          : <table className="min-w-full border-collapse text-sm">
+          : <table className="min-w-full table-fixed border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-[#f5f7f6] shadow-[0_1px_0_#e2e7e4]">
                 <tr>
                   {["月份","收入","支出","净利润"].map(x => <th key={x} className="px-3 py-2.5 text-left text-xs font-medium text-[#526058]">{x}</th>)}
@@ -4265,15 +4132,15 @@ function DatePicker({
   };
 
   return (
-    <div className="flex items-center gap-1">
-      <select value={y} onChange={e => emit(e.target.value, m, d)} className="h-9 rounded border border-[#d8e0db] bg-white px-2 text-sm">
-        {years.map(yr => <option key={yr} value={yr}>{yr}年</option>)}
+    <div className="flex items-center gap-0.5">
+      <select value={y} onChange={e => emit(e.target.value, m, d)} className="h-7 rounded border border-[#d8e0db] bg-white px-1 text-xs">
+        {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
       </select>
-      <select value={m} onChange={e => emit(y, e.target.value, d)} className="h-9 rounded border border-[#d8e0db] bg-white px-2 text-sm">
-        {months.map(mo => <option key={mo} value={mo}>{Number(mo)}月</option>)}
+      <select value={m} onChange={e => emit(y, e.target.value, d)} className="h-7 rounded border border-[#d8e0db] bg-white px-1 text-xs">
+        {months.map(mo => <option key={mo} value={mo}>{Number(mo)}</option>)}
       </select>
-      <select value={d} onChange={e => emit(y, m, e.target.value)} className="h-9 rounded border border-[#d8e0db] bg-white px-2 text-sm">
-        {days.map(da => <option key={da} value={da}>{Number(da)}日</option>)}
+      <select value={d} onChange={e => emit(y, m, e.target.value)} className="h-7 rounded border border-[#d8e0db] bg-white px-1 text-xs">
+        {days.map(da => <option key={da} value={da}>{Number(da)}</option>)}
       </select>
     </div>
   );
@@ -5708,6 +5575,38 @@ function EmptyState({
         </div>
         <div className="mt-4 text-sm font-medium">{title}</div>
         <div className="mt-1 text-xs text-[#86909c]">{description}</div>
+      </div>
+    </div>
+  );
+}
+
+function PaginationBar({
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (ps: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="shrink-0 border-t border-[#e7ece9] bg-[#fafcfb] px-4 py-2.5 flex items-center justify-between text-xs text-[#7d8881]">
+      <span>共 {total} 条</span>
+      <div className="flex items-center gap-2">
+        <select value={pageSize} onChange={e => { onPageSizeChange(Number(e.target.value)); }}
+          className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs">
+          {[30,50,100].map(n => <option key={n} value={n}>{n}条/页</option>)}
+        </select>
+        <button onClick={() => onPageChange(page - 1)} disabled={page <= 1}
+          className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs disabled:opacity-40">上一页</button>
+        <span className="tabular-nums">{page}/{totalPages}</span>
+        <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}
+          className="h-7 rounded border border-[#dbe2dd] bg-white px-2 text-xs disabled:opacity-40">下一页</button>
       </div>
     </div>
   );

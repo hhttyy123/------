@@ -79,12 +79,12 @@ def company_delete(company_id: int, db: Session = Depends(get_db)):
 
 @router.get("/export/file.xlsx")
 def company_export(db: Session = Depends(get_db)):
-    return StreamingResponse(export_companies_excel(db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="companies.xlsx"'})
+    return StreamingResponse(export_companies_excel(db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="企业列表.xlsx"'})
 
 
 @router.get("/positions/list")
-def positions(company_id: int | None = None, db: Session = Depends(get_db)):
-    return {"rows": list_positions(db, company_id)}
+def positions(company_id: int | None = None, page: int = 1, page_size: int = 100, db: Session = Depends(get_db)):
+    return list_positions(db, company_id, page, page_size)
 
 
 @router.post("/positions")
@@ -109,11 +109,11 @@ def position_delete(position_id: int, db: Session = Depends(get_db)):
 def positions_export(db: Session = Depends(get_db)):
     from io import BytesIO
     from openpyxl import Workbook
-    rows = list_positions(db)
+    rows = list_positions(db, page_size=10000)
     wb = Workbook(); ws = wb.active; ws.title = "岗位"
     ws.append(["所属企业", "岗位名称", "日单价", "需求人数", "状态", "描述"])
     for r in rows["rows"]:
         ws.append([r["company_name"], r["name"], r["daily_rate"], r["required_count"], r["status"], r["description"]])
     stream = BytesIO(); wb.save(stream); stream.seek(0)
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": 'attachment; filename="positions.xlsx"'})
+                             headers={"Content-Disposition": 'attachment; filename="岗位列表.xlsx"'})

@@ -1,7 +1,7 @@
 # advisor.py - AI assistant with function calling
 """AI advisor powered by DeepSeek function calling."""
 import json
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -141,6 +141,43 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "query_positions",
+            "description": "查询岗位列表，可按企业筛选。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "company_id": {"type": "integer", "description": "企业ID，不传则查全部"},
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_approvals",
+            "description": "查询当前待审批的工资和返费事项。",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_reconciliation",
+            "description": "查询日记账与业务记录的核对差异。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_from": {"type": "string", "description": "开始日期 YYYY-MM-DD"},
+                    "date_to": {"type": "string", "description": "结束日期 YYYY-MM-DD"},
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_summary",
             "description": "获取公司经营概况汇总（人员、资金、预警、审批等）。",
             "parameters": {"type": "object", "properties": {}, "required": []}
@@ -247,6 +284,28 @@ def _exec_invoices(db: Session):
     total = sum(r.amount or 0 for r in rows)
     return {"count": len(rows), "total": round(float(total), 2), "items": [{"company": r.company, "invoice_no": r.invoice_no, "date": str(r.invoice_date), "amount": float(r.amount), "status": r.status} for r in rows]}
 
+def _exec_positions(db: Session, company_id=None):
+    if company_id:
+        rows = db.execute(text("SELECT p.name, p.daily_rate, p.required_count, p.status, c.name AS company FROM positions p JOIN companies c ON c.id=p.company_id WHERE p.deleted_at IS NULL AND p.company_id=:cid ORDER BY p.name"), {"cid": company_id}).mappings().all()
+    else:
+        rows = db.execute(text("SELECT p.name, p.daily_rate, p.required_count, p.status, c.name AS company FROM positions p JOIN companies c ON c.id=p.company_id WHERE p.deleted_at IS NULL ORDER BY c.name, p.name")).mappings().all()
+    return {"count": len(rows), "items": [{"name": r.name, "company": r.company, "daily_rate": float(r.daily_rate) if r.daily_rate else None, "required": r.required_count, "status": r.status} for r in rows]}
+
+def _exec_approvals(db: Session):
+    rows = db.execute(text("SELECT '工资' AS module, pb.id, pb.name AS label, pb.salary_month AS ref_date, pb.total_amount AS amount, pb.status FROM payroll_batches pb WHERE pb.status IN ('finance_review','owner_review') UNION ALL SELECT '返费' AS module, r.id, c.name AS label, r.rebate_date AS ref_date, r.amount, r.status FROM recruitment_rebates r JOIN companies c ON c.id=r.company_id WHERE r.status IN ('finance_review','owner_review') ORDER BY ref_date DESC")).mappings().all()
+    return {"count": len(rows), "items": [{"module": r.module, "id": r.id, "label": r.label, "ref_date": str(r.ref_date), "amount": float(r.amount or 0), "status": r.status} for r in rows]}
+
+def _exec_reconciliation(db: Session, date_from=None, date_to=None):
+    today = date.today()
+    df = date_from or str(today.replace(day=1))
+    dt = date_to or str(today)
+    # Compare journal totals vs business module totals
+    journal = db.execute(text("SELECT COALESCE(SUM(amount) FILTER (WHERE direction='income'),0) AS income, COALESCE(SUM(amount) FILTER (WHERE direction='expense'),0) AS expense FROM cash_transactions WHERE status='confirmed' AND transaction_date BETWEEN :df AND :dt"), {"df": df, "dt": dt}).mappings().one()
+    payroll = db.execute(text("SELECT COALESCE(SUM(pi.net_pay),0) AS total FROM payroll_items pi JOIN payroll_batches pb ON pb.id=pi.batch_id WHERE pb.status='confirmed' AND pb.pay_date BETWEEN :df AND :dt"), {"df": df, "dt": dt}).mappings().one()
+    rebates = db.execute(text("SELECT COALESCE(SUM(amount),0) AS total FROM recruitment_rebates WHERE status='confirmed' AND rebate_date BETWEEN :df AND :dt"), {"df": df, "dt": dt}).mappings().one()
+    payments = db.execute(text("SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE status='confirmed' AND payment_date BETWEEN :df AND :dt"), {"df": df, "dt": dt}).mappings().one()
+    return {"period": f"{df} ~ {dt}", "journal_income": float(journal.income), "journal_expense": float(journal.expense), "payroll_total": float(payroll.total), "rebates_total": float(rebates.total), "payments_total": float(payments.total), "expense_diff": round(float(journal.expense - payroll.total - rebates.total), 2), "income_diff": round(float(journal.income - payments.total), 2)}
+
 def _exec_summary(db: Session):
     today = date.today()
     month_start = today.replace(day=1)
@@ -271,6 +330,9 @@ TOOL_EXECUTORS = {
     "query_contracts": _exec_contracts,
     "query_attendance": _exec_attendance,
     "query_invoices": _exec_invoices,
+    "query_positions": _exec_positions,
+    "query_approvals": _exec_approvals,
+    "query_reconciliation": _exec_reconciliation,
     "get_summary": _exec_summary,
 }
 
@@ -287,15 +349,26 @@ def advisor_context(db: Session = Depends(get_db)):
 
 @router.post("/ask")
 async def advisor_ask(req: AskRequest, db: Session = Depends(get_db)):
-    system = """你是曼克斯劳务派遣公司的数据分析助手。你可以调用工具函数来查询公司的各项数据。
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    weekday = ["星期一","星期二","星期三","星期四","星期五","星期六","星期日"][now.weekday()]
+    current_month = now.strftime("%Y-%m")
+    current_year = str(now.year)
+
+    system = f"""你是曼克斯劳务派遣公司的数据分析助手。你可以调用工具函数来查询公司的各项数据。
+
+当前日期：{today_str} {weekday}（北京时间）
+当前月份：{current_month}
+当前年份：{current_year}
 
 使用规则：
 1. 分析用户问题的意图，主动调用相关工具获取数据
 2. 可以同时调用多个工具（如同时查日记账和回款）
-3. 日期参数始终用 YYYY-MM-DD 格式；如果用户说"昨天""上周""本月"，自己推算当前日期
+3. 日期参数始终用 YYYY-MM-DD 格式；用户说"昨天""上周""本月"时，根据上述当前日期推算
 4. 用查询到的真实数据回答问题，不要编造
 5. 如果查询结果为空，明确告知"当前没有符合条件的数据"
-6. 回答简洁，先给结论再列明细"""
+6. 回答简洁，先给结论再列明细
+7. 可以多次调用工具：如果第一次查询结果不够，继续调用其他工具补充"""
 
     messages = [{"role": "system", "content": system}]
     for h in (req.history or [])[-10:]:
@@ -303,21 +376,28 @@ async def advisor_ask(req: AskRequest, db: Session = Depends(get_db)):
             messages.append({"role": h["role"], "content": str(h["content"])[:2000]})
     messages.append({"role": "user", "content": req.question})
 
-    # First call: let AI decide which tools to call
-    resp = await client.chat.completions.create(
-        model=settings.DEEPSEEK_MODEL,
-        max_tokens=1500,
-        temperature=0.1,
-        messages=messages,
-        tools=TOOLS,
-    )
+    tools_used_all = []
 
-    msg = resp.choices[0].message
-    tool_calls = getattr(msg, "tool_calls", None) or []
+    # Multi-round tool calling loop (max 5 rounds)
+    for _round in range(5):
+        resp = await client.chat.completions.create(
+            model=settings.DEEPSEEK_MODEL,
+            max_tokens=1500,
+            temperature=0.1,
+            messages=messages,
+            tools=TOOLS,
+        )
 
-    # Execute tool calls
-    tool_results = []
-    if tool_calls:
+        msg = resp.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None) or []
+
+        if not tool_calls:
+            # No more tools needed — AI is done, return its answer
+            answer = (msg.content or "").strip()
+            return {"answer": answer, "tools_used": tools_used_all}
+
+        # Execute tool calls
+        tool_results = []
         for tc in tool_calls:
             func_name = tc.function.name
             func_args = json.loads(tc.function.arguments)
@@ -326,24 +406,22 @@ async def advisor_ask(req: AskRequest, db: Session = Depends(get_db)):
                 try:
                     result = executor(db, **func_args)
                     tool_results.append({"id": tc.id, "name": func_name, "result": result})
+                    tools_used_all.append(func_name)
                 except Exception as e:
                     tool_results.append({"id": tc.id, "name": func_name, "error": str(e)})
+                    tools_used_all.append(func_name)
 
-        # Add AI response and tool results to messages
+        # Add AI response and tool results to conversation
         messages.append({"role": "assistant", "content": None, "tool_calls": [tc.model_dump() for tc in tool_calls]})
         for tr in tool_results:
             messages.append({"role": "tool", "tool_call_id": tr["id"], "content": json.dumps(tr.get("result", tr.get("error", "")), ensure_ascii=False, default=str)})
 
-        # Second call: AI synthesizes the answer
-        resp2 = await client.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
-            max_tokens=2000,
-            temperature=0.1,
-            messages=messages,
-        )
-        answer = (resp2.choices[0].message.content or "").strip()
-    else:
-        # No tool calls needed - AI answered directly from context
-        answer = msg.content or ""
-
-    return {"answer": answer, "tools_used": [t["name"] for t in tool_results]}
+    # Fallback: if max rounds reached, ask AI to synthesize a final answer
+    resp_final = await client.chat.completions.create(
+        model=settings.DEEPSEEK_MODEL,
+        max_tokens=2000,
+        temperature=0.1,
+        messages=messages,
+    )
+    answer = (resp_final.choices[0].message.content or "").strip()
+    return {"answer": answer, "tools_used": tools_used_all}

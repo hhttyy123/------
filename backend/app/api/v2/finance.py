@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 from io import BytesIO
 from pathlib import Path
+from openpyxl import Workbook
 import pandas as pd
 from fastapi import APIRouter,Depends,HTTPException
 from fastapi.responses import StreamingResponse
@@ -40,13 +41,17 @@ CFG={
  'payment':('payments','r.id,r.company_id,c.name company_name,r.payment_date,r.amount,r.payment_method,r.acceptance_due_date,r.bank_reference,r.status,r.remark','r','JOIN companies c ON c.id=r.company_id')}
 
 @router.get('/{module}')
-def listing(module:str,db:Session=Depends(get_db)):
+def listing(module:str,page:int=1,page_size:int=30,db:Session=Depends(get_db)):
  if module=='salary':
-  rows=db.execute(text('''SELECT pi.id,pb.id batch_id,e.id employee_id,e.name employee_name,c.name company_name,pb.salary_month,pb.pay_date,pb.status,pi.base_salary,pi.allowance,pi.deduction,pi.net_pay,pi.remark FROM payroll_items pi JOIN payroll_batches pb ON pb.id=pi.batch_id JOIN employees e ON e.id=pi.employee_id JOIN companies c ON c.id=pi.company_id ORDER BY pb.salary_month DESC,pi.id DESC''')).mappings().all()
+  base='FROM payroll_items pi JOIN payroll_batches pb ON pb.id=pi.batch_id JOIN employees e ON e.id=pi.employee_id JOIN companies c ON c.id=pi.company_id'
+  total=db.execute(text(f'SELECT COUNT(*) {base}')).scalar() or 0
+  rows=db.execute(text(f'SELECT pi.id,pb.id batch_id,e.id employee_id,e.name employee_name,c.name company_name,pb.salary_month,pb.pay_date,pb.status,pi.base_salary,pi.allowance,pi.deduction,pi.net_pay,pi.remark {base} ORDER BY pb.salary_month DESC,pi.id DESC LIMIT :limit OFFSET :offset'),{'limit':page_size,'offset':(page-1)*page_size}).mappings().all()
  elif module in CFG:
-  table,cols,alias,joins=CFG[module];rows=db.execute(text(f'SELECT {cols} FROM {table} {alias} {joins} ORDER BY r.id DESC LIMIT 1000')).mappings().all()
+  table,cols,alias,joins=CFG[module];base=f'FROM {table} {alias} {joins}'
+  total=db.execute(text(f'SELECT COUNT(*) {base}')).scalar() or 0
+  rows=db.execute(text(f'SELECT {cols} {base} ORDER BY r.id DESC LIMIT :limit OFFSET :offset'),{'limit':page_size,'offset':(page-1)*page_size}).mappings().all()
  else:raise HTTPException(404,'模块不存在')
- return {'rows':[dict(x) for x in rows],'total':len(rows)}
+ return {'rows':[dict(x) for x in rows],'total':total,'page':page,'page_size':page_size}
 
 @router.post('/rebate')
 def rebate(p:RebateWrite,user:User=Depends(require_user),db:Session=Depends(get_db)):
@@ -110,9 +115,26 @@ def remove(module:str,record_id:int,db:Session=Depends(get_db)):
  else:raise HTTPException(404,'模块不存在')
  db.commit();return {'ok':True}
 
+FINANCE_EXPORT_LABELS={
+ 'salary':{'employee_name':'员工','company_name':'企业','salary_month':'工资月份','pay_date':'发薪日期','base_salary':'基本工资','allowance':'津贴','deduction':'扣款','net_pay':'实发金额','status':'状态','remark':'备注'},
+ 'rebate':{'company_name':'企业','employee_name':'关联员工','rebate_date':'返费日期','amount':'金额','person_count':'人数','status':'状态','remark':'备注'},
+ 'invoice':{'company_name':'企业','invoice_no':'发票编号','invoice_date':'开票日期','amount':'金额','status':'状态','remark':'备注'},
+ 'receivable':{'company_name':'企业','expected_date':'预计回款日','amount':'应收金额','received_amount':'已收金额','status':'状态','remark':'备注'},
+ 'payment':{'company_name':'企业','payment_date':'回款日期','amount':'金额','payment_method':'付款方式','acceptance_due_date':'承兑到期日','bank_reference':'银行流水','status':'状态','remark':'备注'},
+}
+MODULE_NAMES={'salary':'工资发放','rebate':'代招返费','invoice':'开票管理','receivable':'应收管理','payment':'回款管理'}
+
 @router.get('/{module}/export')
 def export(module:str,db:Session=Depends(get_db)):
- data=listing(module,db);stream=BytesIO();pd.DataFrame(data['rows']).to_excel(stream,index=False);stream.seek(0);return StreamingResponse(stream,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':f'attachment; filename="{module}.xlsx"'})
+ data=listing(module,page_size=100000,db=db);labels=FINANCE_EXPORT_LABELS.get(module,{})
+ wb=Workbook();ws=wb.active;ws.title=MODULE_NAMES.get(module,module)
+ if data['rows']:
+  cols=[k for k in data['rows'][0] if not k.startswith('_') and k!='id' and k!='batch_id']
+  ws.append([labels.get(c,c) for c in cols])
+  for r in data['rows']:
+   ws.append([r.get(c,'') for c in cols])
+ stream=BytesIO();wb.save(stream);stream.seek(0)
+ return StreamingResponse(stream,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':f'attachment; filename="{MODULE_NAMES.get(module,module)}.xlsx"'})
 
 class ImportRequest(BaseModel):upload_id:str;sheet_name:str
 

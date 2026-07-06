@@ -72,12 +72,13 @@ def delete_company(session: Session, company_id: int) -> bool:
     session.commit(); return True
 
 
-def list_positions(session: Session, company_id: int | None = None) -> list[dict[str, Any]]:
-    query = select(Position).where(Position.deleted_at.is_(None))
-    if company_id: query = query.where(Position.company_id == company_id)
-    rows = session.scalars(query.order_by(Position.id.desc())).all()
+def list_positions(session: Session, company_id: int | None = None, page: int = 1, page_size: int = 100) -> dict[str, Any]:
+    conditions = [Position.deleted_at.is_(None)]
+    if company_id: conditions.append(Position.company_id == company_id)
+    total = session.scalar(select(func.count()).select_from(Position).where(*conditions)) or 0
+    rows = session.scalars(select(Position).where(*conditions).order_by(Position.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     company_names = dict(session.execute(select(Company.id, Company.name)).all())
-    return [serialize_position(row, company_names.get(row.company_id, "")) for row in rows]
+    return {"rows": [serialize_position(row, company_names.get(row.company_id, "")) for row in rows], "total": total, "page": page, "page_size": page_size}
 
 
 def create_position(session: Session, data: dict[str, Any]) -> dict[str, Any]:

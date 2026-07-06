@@ -23,14 +23,16 @@ class AttendanceWrite(BaseModel):
     remark:str|None=None
 
 @router.get('')
-def list_attendance(date_from:date|None=None,date_to:date|None=None,employee_id:int|None=None,db:Session=Depends(get_db)):
+def list_attendance(date_from:date|None=None,date_to:date|None=None,employee_id:int|None=None,page:int=1,page_size:int=30,db:Session=Depends(get_db)):
     conditions=[];params={}
     if date_from is not None:conditions.append('a.work_date>=:date_from');params['date_from']=date_from
     if date_to is not None:conditions.append('a.work_date<=:date_to');params['date_to']=date_to
     if employee_id is not None:conditions.append('e.id=:employee_id');params['employee_id']=employee_id
     where=(' WHERE '+' AND '.join(conditions)) if conditions else ''
-    rows=db.execute(text('''SELECT a.id,e.id employee_id,e.name employee_name,a.work_date,a.status,a.hours,a.deduction_amount,a.remark FROM attendance_records a JOIN employment_records er ON er.id=a.employment_id JOIN employees e ON e.id=er.employee_id'''+where+' ORDER BY a.work_date DESC,a.id DESC LIMIT 1000'),params).mappings().all()
-    return {'rows':[dict(x) for x in rows],'total':len(rows)}
+    base_from='FROM attendance_records a JOIN employment_records er ON er.id=a.employment_id JOIN employees e ON e.id=er.employee_id'+where
+    total=db.execute(text('SELECT COUNT(*) '+base_from),params).scalar() or 0
+    rows=db.execute(text('SELECT a.id,e.id employee_id,e.name employee_name,a.work_date,a.status,a.hours,a.deduction_amount,a.remark '+base_from+' ORDER BY a.work_date DESC,a.id DESC LIMIT :limit OFFSET :offset'),{**params,'limit':page_size,'offset':(page-1)*page_size}).mappings().all()
+    return {'rows':[dict(x) for x in rows],'total':total,'page':page,'page_size':page_size}
 
 def employment_id(db:Session,employee_id:int)->int:
     value=db.execute(text("SELECT id FROM employment_records WHERE employee_id=:eid AND status='active' ORDER BY id DESC LIMIT 1"),{'eid':employee_id}).scalar()
@@ -60,10 +62,10 @@ def delete_attendance(record_id:int,db:Session=Depends(get_db)):
 
 @router.get('/export/file.xlsx')
 def attendance_export(date_from:date|None=None,date_to:date|None=None,db:Session=Depends(get_db)):
-    data=list_attendance(date_from=date_from,date_to=date_to,db=db)
+    data=list_attendance(date_from=date_from,date_to=date_to,page_size=100000,db=db)
     wb=Workbook();ws=wb.active;ws.title="考勤"
     ws.append(["日期","人员","状态","工时","扣款","备注"])
     for r in data["rows"]:
         ws.append([r["work_date"],r["employee_name"],r["status"],r["hours"],r["deduction_amount"],r["remark"] or ""])
     stream=BytesIO();wb.save(stream);stream.seek(0)
-    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":'attachment; filename="attendance.xlsx"'})
+    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":'attachment; filename="考勤记录.xlsx"'})

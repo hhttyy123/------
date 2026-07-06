@@ -27,21 +27,21 @@ export async function downloadAuthenticated(url:string):Promise<void>{const r=aw
 
 export type DashboardSummary = {
   active_employees: number
-  month_receivable: number
-  month_salary: number
+  active_companies: number
+  journal_count: number
+  month_income: number
+  month_expense: number
   month_profit: number
-  warning_count: number
   approval_count: number
+  warnings: DashboardWarning[]
   current_month: string
 }
 
-export type BusinessWarning = {
+export type DashboardWarning = {
   type: string
-  module: string
-  record_id?: number
   title: string
   message: string
-  severity: 'info' | 'warning' | 'error'
+  severity: 'info' | 'warning'
 }
 
 export type StagedImportRow = {
@@ -232,10 +232,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return requestV2<DashboardSummary>('/dashboard/summary')
 }
 
-export async function listBusinessWarnings(): Promise<{ warnings: BusinessWarning[] }> {
-  return request<{ warnings: BusinessWarning[] }>('/warnings')
-}
-
 export async function stageJournalImport(payload: {
   upload_id: string
   sheet_name: string
@@ -291,12 +287,12 @@ export function journalExportUrl(filters: { direction?: string; date_from?: stri
   return `${V2_BASE_URL}/journal/export/file.xlsx?${params}`
 }
 
-export async function listCompanies(search = '', status = ''): Promise<{ rows: CompanyRecord[]; total: number }> { const p = new URLSearchParams({ page_size: '500' }); if (search) p.set('search', search); if (status) p.set('status', status); return requestV2(`/companies?${p}`) }
+export async function listCompanies(search = '', status = '', page = 1, page_size = 30): Promise<{ rows: CompanyRecord[]; total: number; page: number; page_size: number }> { const p = new URLSearchParams({ page: String(page), page_size: String(page_size) }); if (search) p.set('search', search); if (status) p.set('status', status); return requestV2(`/companies?${p}`) }
 export async function createCompany(data: Partial<CompanyRecord>): Promise<CompanyRecord> { return requestV2('/companies', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateCompany(id: number, data: Partial<CompanyRecord>): Promise<CompanyRecord> { return requestV2(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
 export async function deleteCompanyRecord(id: number): Promise<{ ok: boolean }> { return requestV2(`/companies/${id}`, { method: 'DELETE' }) }
 export function companiesExportUrl(): string { return `${V2_BASE_URL}/companies/export/file.xlsx` }
-export async function listPositions(companyId?: number): Promise<{ rows: PositionRecord[] }> { return requestV2(`/companies/positions/list${companyId ? `?company_id=${companyId}` : ''}`) }
+export async function listPositions(companyId?: number, page = 1, page_size = 100): Promise<{ rows: PositionRecord[]; total: number; page: number; page_size: number }> { return requestV2(`/companies/positions/list?${new URLSearchParams({ page: String(page), page_size: String(page_size), ...(companyId ? { company_id: String(companyId) } : {}) })}`) }
 export async function createPosition(data: Partial<PositionRecord>): Promise<PositionRecord> { return requestV2('/companies/positions', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updatePosition(id: number, data: Partial<PositionRecord>): Promise<PositionRecord> { return requestV2(`/companies/positions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }) }
 export async function deletePositionRecord(id: number): Promise<{ ok: boolean }> { return requestV2(`/companies/positions/${id}`, { method: 'DELETE' }) }
@@ -313,24 +309,24 @@ export async function stageAttendanceImport(payload:{upload_id:string;sheet_name
 export async function commitStagedAttendance(batchId:number):Promise<{batch_id:number;status:string;imported_rows:number}>{return requestV2(`/imports/batches/${batchId}/commit-attendance`,{method:'POST'})}
 export async function stageJournalWorkbook(upload_id:string):Promise<StagedImportBatch>{return requestV2('/imports/journal/stage-workbook',{method:'POST',body:JSON.stringify({upload_id})})}
 export function contractsExportUrl():string{return `${V2_BASE_URL}/employees/contracts/export/file.xlsx`}
-export async function listEmployees(search=''):Promise<{rows:EmployeeRecord[];total:number}>{return requestV2(`/employees?search=${encodeURIComponent(search)}`)}
+export async function listEmployees(search='',page=1,page_size=30):Promise<{rows:EmployeeRecord[];total:number;page:number;page_size:number}>{return requestV2(`/employees?${new URLSearchParams({search,page:String(page),page_size:String(page_size)})}`)}
 export async function createEmployee(data:Record<string,unknown>):Promise<EmployeeRecord>{return requestV2('/employees',{method:'POST',body:JSON.stringify(data)})}
 export async function updateEmployee(id:number,data:Record<string,unknown>):Promise<EmployeeRecord>{return requestV2(`/employees/${id}`,{method:'PATCH',body:JSON.stringify(data)})}
 export async function leaveEmployee(id:number,date:string):Promise<{ok:boolean}>{return requestV2(`/employees/${id}/leave?leave_date=${date}`,{method:'POST'})}
 export async function getEmployeeDetail(id:number):Promise<EmployeeDetail>{return requestV2(`/employees/${id}/detail`)}
 export async function listUnsignedContractWarnings():Promise<{rows:Array<{employee_id:number;employee_name:string;entry_date:string;days_worked:number}>}>{return requestV2('/employees/warnings/unsigned-contract')}
-export async function listContracts(employeeId?:number):Promise<{rows:ContractRecord[]}>{return requestV2(`/employees/contracts/list${employeeId?`?employee_id=${employeeId}`:''}`)}
+export async function listContracts(employeeId?:number,page=1,page_size=30):Promise<{rows:ContractRecord[];total:number;page:number;page_size:number}>{return requestV2(`/employees/contracts/list?${new URLSearchParams({page:String(page),page_size:String(page_size),...(employeeId?{employee_id:String(employeeId)}:{})})}`)}
 export async function createContract(data:Partial<ContractRecord>&{company_id?:number|null}):Promise<{id:number}>{return requestV2('/employees/contracts',{method:'POST',body:JSON.stringify(data)})}
 export async function updateContract(id:number,data:Partial<ContractRecord>):Promise<{id:number}>{return requestV2(`/employees/contracts/${id}`,{method:'PATCH',body:JSON.stringify(data)})}
 export async function terminateContract(id:number):Promise<{ok:boolean}>{return requestV2(`/employees/contracts/${id}`,{method:'DELETE'})}
 export async function listContractExpiryWarnings():Promise<{rows:Array<{contract_id:number;employee_name:string;end_date:string;days_left:number}>}>{return requestV2('/employees/warnings/contract-expiry')}
-export async function listAttendance():Promise<{rows:AttendanceRecord[];total:number}>{return requestV2('/attendance')}
+export async function listAttendance(page=1,page_size=30):Promise<{rows:AttendanceRecord[];total:number;page:number;page_size:number}>{return requestV2(`/attendance?page=${page}&page_size=${page_size}`)}
 export async function createAttendance(data:Omit<AttendanceRecord,'id'|'employee_name'>):Promise<{id:number}>{return requestV2('/attendance',{method:'POST',body:JSON.stringify(data)})}
 export async function updateAttendance(id:number,data:Omit<AttendanceRecord,'id'|'employee_name'>):Promise<{ok:boolean}>{return requestV2(`/attendance/${id}`,{method:'PATCH',body:JSON.stringify(data)})}
 export async function deleteAttendance(id:number):Promise<{ok:boolean}>{return requestV2(`/attendance/${id}`,{method:'DELETE'})}
 export function attendanceExportUrl():string{return `${V2_BASE_URL}/attendance/export/file.xlsx`}
 export function employeesExportUrl():string{return `${V2_BASE_URL}/employees/export/file.xlsx`}
-export async function listFinanceModule(module:string):Promise<{rows:Array<Record<string,unknown>>;total:number}>{return requestV2(`/finance/${module}`)}
+export async function listFinanceModule(module:string,page=1,page_size=30):Promise<{rows:Array<Record<string,unknown>>;total:number;page:number;page_size:number}>{return requestV2(`/finance/${module}?page=${page}&page_size=${page_size}`)}
 export async function createFinanceRecord(module:string,data:Record<string,unknown>):Promise<{id:number}>{return requestV2(`/finance/${module}`,{method:'POST',body:JSON.stringify(data)})}
 export async function approveFinanceRecord(module:string,id:number):Promise<{status:string}>{return requestV2(`/finance/${module}/${id}/approve`,{method:'POST'})}
 export async function updateFinanceRecord(module:string,id:number,data:Record<string,unknown>):Promise<{ok:boolean}>{return requestV2(`/finance/${module}/${id}`,{method:'PATCH',body:JSON.stringify(data)})}
@@ -339,11 +335,7 @@ export function financeExportUrl(module:string):string{return `${V2_BASE_URL}/fi
 export async function importFinance(module:string,upload_id:string,sheet_name:string):Promise<{imported_rows:number;errors:Array<{row:number;error:string}>}>{return requestV2(`/finance/${module}/import`,{method:'POST',body:JSON.stringify({upload_id,sheet_name})})}
 export async function profitSummary(dateFrom:string,dateTo:string):Promise<Record<string,number>>{return requestV2(`/finance/profit/summary?date_from=${dateFrom}&date_to=${dateTo}`)}
 
-export type AdvisorContext = Record<string, unknown>
-export async function getAdvisorContext(): Promise<AdvisorContext> {
-  return requestV2<AdvisorContext>('/advisor/context')
-}
-export async function askAdvisor(question: string, history: Array<{role: string; content: string}> = []): Promise<{answer: string; context_date: string}> {
+export async function askAdvisor(question: string, history: Array<{role: string; content: string}> = []): Promise<{answer: string; tools_used?: string[]}> {
   return requestV2('/advisor/ask', { method: 'POST', body: JSON.stringify({ question, history }) })
 }
 

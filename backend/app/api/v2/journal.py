@@ -93,5 +93,5 @@ def journal_export(
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="journal.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="日记账.xlsx"'},
     )
