@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.responses import excel_attachment_headers
 from app.services.journal_db import (
     create_journal_transaction,
     export_journal_excel,
@@ -93,5 +94,5 @@ def journal_export(
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="日记账.xlsx"'},
+        headers=excel_attachment_headers("日记账.xlsx"),
     )

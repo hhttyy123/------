@@ -6,7 +6,8 @@ import path from 'path'
 const apiTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'serve' ? '/' : process.env.VITE_BASE || '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -18,4 +19,4 @@ export default defineConfig({
       '/api': apiTarget,
     },
   },
-})
+}))

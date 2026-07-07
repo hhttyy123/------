@@ -11,6 +11,7 @@ from pydantic import BaseModel,Field,model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.responses import excel_attachment_headers
 from app.api.auth import require_user,user_role
 from app.models import User
 from app.config import settings
@@ -134,7 +135,7 @@ def export(module:str,db:Session=Depends(get_db)):
   for r in data['rows']:
    ws.append([r.get(c,'') for c in cols])
  stream=BytesIO();wb.save(stream);stream.seek(0)
- return StreamingResponse(stream,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':f'attachment; filename="{MODULE_NAMES.get(module,module)}.xlsx"'})
+ return StreamingResponse(stream,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers=excel_attachment_headers(f'{MODULE_NAMES.get(module,module)}.xlsx'))
 
 class ImportRequest(BaseModel):upload_id:str;sheet_name:str
 

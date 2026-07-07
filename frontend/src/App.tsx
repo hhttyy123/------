@@ -3590,7 +3590,6 @@ function JournalNewRowInline({ onSaved, onCancel }: { onSaved: () => void; onCan
   );
 }
 
-// @ts-ignore - kept for reference, replaced by JournalRow inline editing
 function _JournalEditor({
   row,
   onClose,
@@ -3908,7 +3907,7 @@ function ReconciliationPage({ setError, reloadTrigger }: { setError: (v: string)
     setLoading(true); setError("");
     try { setResult(await getReconciliation(dateFrom, dateTo)); } catch (e) { setError(readError(e)); }
     finally { setLoading(false); }
-  }, [dateFrom, dateTo, setError]);
+  }, [dateFrom, dateTo, setError, setResult]);
 
   useEffect(() => { load(); }, [load, reloadTrigger]);
 
@@ -4001,7 +4000,7 @@ function DatabaseProfitPage({
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, setError]);
+  }, [dateFrom, dateTo, setError, setResult]);
 
   useEffect(() => { load(); }, [load, reloadTrigger]);
 

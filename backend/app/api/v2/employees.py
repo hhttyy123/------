@@ -4,6 +4,7 @@ from pydantic import BaseModel,Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.responses import excel_attachment_headers
 from app.services.employee_db import create_contract,create_employee,employee_detail,expiring_contract_warnings,leave_employee,list_contracts,list_employees,terminate_contract,unsigned_contract_warnings,update_contract,update_employee
 from io import BytesIO
 from fastapi.responses import StreamingResponse
@@ -69,7 +70,7 @@ def employees_export(db:Session=Depends(get_db)):
         except:pass
         ws.append([r["name"],id_full or r["id_card_masked"],r["phone"],"男" if r["gender"]=="male" else "女",r["company_name"],r["position_name"],r["entry_date"],"在职" if r["status"]=="active" else "离职"])
     stream=BytesIO();wb.save(stream);stream.seek(0)
-    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":'attachment; filename="人员花名册.xlsx"'})
+    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers=excel_attachment_headers("人员花名册.xlsx"))
 
 @router.get('/contracts/export/file.xlsx')
 def contracts_export(db:Session=Depends(get_db)):
@@ -80,4 +81,4 @@ def contracts_export(db:Session=Depends(get_db)):
         emp=db.execute(text("SELECT name FROM employees WHERE id=:eid"),{"eid":r.get("employee_id")}).scalar()
         ws.append([emp or "",r.get("contract_no",""),r.get("contract_type",""),r.get("sign_date",""),r.get("start_date",""),r.get("end_date",""),r.get("status","")])
     stream=BytesIO(); wb.save(stream); stream.seek(0)
-    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":'attachment; filename="合同列表.xlsx"'})
+    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers=excel_attachment_headers("合同列表.xlsx"))

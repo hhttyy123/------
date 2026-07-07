@@ -8,22 +8,29 @@ import type {
   UploadResponse,
 } from '@/types/import'
 
-const BASE_URL = '/api/v1'
-const V2_BASE_URL = '/api/v2'
+const API_PREFIX = import.meta.env.DEV ? '' : import.meta.env.VITE_API_PREFIX || ''
+const AUTH_BASE = `${API_PREFIX}/api/auth`
+const BASE_URL = `${API_PREFIX}/api/v1`
+const V2_BASE_URL = `${API_PREFIX}/api/v2`
 const authHeaders = (): Record<string,string> => {
   const token = localStorage.getItem('auth_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 export type AuthUser = { id:number;username:string;display_name:string }
 export type SystemUser={id:number;username:string;display_name:string;status:string;role_code:'staff'|'finance'|'owner'|'admin';role_name:string}
-export async function authStatus():Promise<{initialized:boolean}>{const r=await fetch('/api/auth/status');return r.json()}
-export async function authenticate(mode:'login'|'bootstrap',data:{username:string;password:string;display_name?:string}):Promise<{token:string;user:AuthUser}>{const r=await fetch(`/api/auth/${mode}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const x=await r.json();if(!r.ok)throw new Error(x.detail||'登录失败');return x}
-export async function currentUser():Promise<AuthUser>{const r=await fetch('/api/auth/me',{headers:authHeaders()});if(!r.ok)throw new Error('unauthorized');return r.json()}
-export async function logout():Promise<void>{await fetch('/api/auth/logout',{method:'POST'});localStorage.removeItem('auth_token')}
-export async function listSystemUsers():Promise<{rows:SystemUser[]}>{const r=await fetch('/api/auth/users',{headers:authHeaders()});const x=await r.json();if(!r.ok)throw new Error(x.detail);return x}
-export async function createSystemUser(data:{username:string;password:string;display_name:string;role_code:string}):Promise<{id:number}>{const r=await fetch('/api/auth/users',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(data)});const x=await r.json();if(!r.ok)throw new Error(x.detail);return x}
-export async function changeSystemUserRole(id:number,role:string):Promise<void>{const r=await fetch(`/api/auth/users/${id}/role?role_code=${role}`,{method:'PATCH',headers:authHeaders()});if(!r.ok)throw new Error((await r.json()).detail)}
-export async function downloadAuthenticated(url:string):Promise<void>{const r=await fetch(url,{headers:authHeaders()});if(!r.ok)throw new Error('导出失败');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(r.headers.get('content-disposition')?.match(/filename="?([^";]+)/)?.[1])||'export.xlsx';a.click();URL.revokeObjectURL(a.href)}
+export async function authStatus():Promise<{initialized:boolean}>{const r=await fetch(`${AUTH_BASE}/status`);return r.json()}
+export async function authenticate(mode:'login'|'bootstrap',data:{username:string;password:string;display_name?:string}):Promise<{token:string;user:AuthUser}>{const r=await fetch(`${AUTH_BASE}/${mode}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const x=await r.json();if(!r.ok)throw new Error(x.detail||'登录失败');return x}
+export async function currentUser():Promise<AuthUser>{const r=await fetch(`${AUTH_BASE}/me`,{headers:authHeaders()});if(!r.ok)throw new Error('unauthorized');return r.json()}
+export async function logout():Promise<void>{await fetch(`${AUTH_BASE}/logout`,{method:'POST'});localStorage.removeItem('auth_token')}
+export async function listSystemUsers():Promise<{rows:SystemUser[]}>{const r=await fetch(`${AUTH_BASE}/users`,{headers:authHeaders()});const x=await r.json();if(!r.ok)throw new Error(x.detail);return x}
+export async function createSystemUser(data:{username:string;password:string;display_name:string;role_code:string}):Promise<{id:number}>{const r=await fetch(`${AUTH_BASE}/users`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(data)});const x=await r.json();if(!r.ok)throw new Error(x.detail);return x}
+export async function changeSystemUserRole(id:number,role:string):Promise<void>{const r=await fetch(`${AUTH_BASE}/users/${id}/role?role_code=${role}`,{method:'PATCH',headers:authHeaders()});if(!r.ok)throw new Error((await r.json()).detail)}
+function downloadFilename(header: string | null): string {
+  const encoded = header?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) return decodeURIComponent(encoded)
+  return header?.match(/filename="?([^";]+)/i)?.[1] || 'export.xlsx'
+}
+export async function downloadAuthenticated(url:string):Promise<void>{const r=await fetch(url,{headers:authHeaders()});if(!r.ok)throw new Error('导出失败');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=downloadFilename(r.headers.get('content-disposition'));a.click();URL.revokeObjectURL(a.href)}
 
 export type DashboardSummary = {
   active_employees: number

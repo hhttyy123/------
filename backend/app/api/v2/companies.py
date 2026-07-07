@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.responses import excel_attachment_headers
 from app.services.company_db import (
     create_company, create_position, delete_company, delete_position, export_companies_excel,
     list_companies, list_positions, update_company, update_position,
@@ -79,7 +80,7 @@ def company_delete(company_id: int, db: Session = Depends(get_db)):
 
 @router.get("/export/file.xlsx")
 def company_export(db: Session = Depends(get_db)):
-    return StreamingResponse(export_companies_excel(db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="企业列表.xlsx"'})
+    return StreamingResponse(export_companies_excel(db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=excel_attachment_headers("企业列表.xlsx"))
 
 
 @router.get("/positions/list")
@@ -116,4 +117,4 @@ def positions_export(db: Session = Depends(get_db)):
         ws.append([r["company_name"], r["name"], r["daily_rate"], r["required_count"], r["status"], r["description"]])
     stream = BytesIO(); wb.save(stream); stream.seek(0)
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": 'attachment; filename="岗位列表.xlsx"'})
+                             headers=excel_attachment_headers("岗位列表.xlsx"))

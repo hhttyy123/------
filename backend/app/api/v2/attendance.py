@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.responses import excel_attachment_headers
 
 router=APIRouter()
 
@@ -68,4 +69,4 @@ def attendance_export(date_from:date|None=None,date_to:date|None=None,db:Session
     for r in data["rows"]:
         ws.append([r["work_date"],r["employee_name"],r["status"],r["hours"],r["deduction_amount"],r["remark"] or ""])
     stream=BytesIO();wb.save(stream);stream.seek(0)
-    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":'attachment; filename="考勤记录.xlsx"'})
+    return StreamingResponse(stream,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers=excel_attachment_headers("考勤记录.xlsx"))

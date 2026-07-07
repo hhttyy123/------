@@ -1,0 +1,141 @@
+version: '3'
+
+services:
+  # ========== 以下为原有服务，保持不变 ==========
+
+  # 微信通知服务
+  wechat-service:
+    image: python:3.8-slim
+    container_name: wechat-notifier
+    volumes:
+      - ./wechat:/app
+    working_dir: /app
+    command: python3 notify.py
+    networks:
+      - chem-network
+    restart: unless-stopped
+
+  # AI 聊天后端
+  ai-chem-backend:
+    image: crpi-zapnyuqlrws037uw.cn-shanghai.personal.cr.aliyuncs.com/chemtutor/ai-backend:v2
+    container_name: ai-chem-backend
+    environment:
+      - GLM_API_KEY=10ba5ae71e6d4a5dbd4c5abe168002c4.JhPqIaJC9jMMZQMT
+    volumes:
+      - ./ai_chem/backend/data:/app/data
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  # 博客应用
+  blog:
+    image: crpi-zapnyuqlrws037uw.cn-shanghai.personal.cr.aliyuncs.com/chemtutor/blog:v5
+    container_name: blog-app
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=Hty061120
+      - DB_NAME=blog_db
+    depends_on:
+      - mysql
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  # 3D 可视化后端
+  3d-vis:
+    image: crpi-zapnyuqlrws037uw.cn-shanghai.personal.cr.aliyuncs.com/chemtutor/3d-vis:v2
+    container_name: 3d-vis-backend
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  # ========== 以下为新增：劳务管理系统 ==========
+
+  # 劳务系统数据库
+  manx-db:
+    image: postgres:16-alpine
+    container_name: manx-db
+    environment:
+      - POSTGRES_USER=${MANX_DB_USER}
+      - POSTGRES_PASSWORD=${MANX_DB_PASSWORD}
+      - POSTGRES_DB=${MANX_DB_NAME}
+    volumes:
+      - ./manx_data/pgdata:/var/lib/postgresql/data
+      - ./schema_v1.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MANX_DB_USER} -d ${MANX_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  # 劳务系统后端
+  manx-backend:
+    image: ${MANX_IMAGE}
+    container_name: manx-backend
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${MANX_DB_USER}:${MANX_DB_PASSWORD}@manx-db:5432/${MANX_DB_NAME}
+      - DATA_ENCRYPTION_KEY=${DATA_ENCRYPTION_KEY}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_TOKEN_HOURS=12
+      - COOKIE_SECURE=true
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+      - DEEPSEEK_MODEL=deepseek-v4-flash
+      - UPLOAD_DIR=/app/data/uploads
+      - DATA_DIR=/app/data/storage
+      - MAX_UPLOAD_SIZE_MB=10
+    volumes:
+      - ./manx_data/uploads:/app/data/uploads
+      - ./manx_data/storage:/app/data/storage
+    depends_on:
+      manx-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  # ========== 以下为原有服务，保持不变 ==========
+
+  # Nginx 网关
+  nginx:
+    image: nginx:alpine
+    container_name: chem-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/ssl:ro
+      - ./chem_project/dist:/usr/share/nginx/html/chem:ro
+      - ./manx_frontend/dist:/usr/share/nginx/html/manx:ro
+    restart: unless-stopped
+    depends_on:
+      - ai-chem-backend
+      - blog
+      - 3d-vis
+      - manx-backend
+    networks:
+      - chem-network
+
+  # 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: blog-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=Hty061120
+      - MYSQL_DATABASE=blog_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+networks:
+  chem-network:
+    driver: bridge
